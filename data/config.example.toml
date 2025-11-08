@@ -1,0 +1,107 @@
+# TransLearn 配置文件示例
+# 复制此文件为 config.toml 并修改配置
+
+[app]
+name = "TransLearn"
+version = "1.0.0"
+language = "zh_CN"
+theme = "auto"  # light/dark/auto
+
+[database]
+# MySQL 数据库配置
+host = "localhost"
+port = 3306
+user = "root"
+password = "your_password"
+database = "translearn"
+charset = "utf8mb4"
+pool_size = 5
+max_overflow = 10
+pool_recycle = 3600
+
+[hotkey]
+translate = "ctrl+alt+d"
+screenshot_ocr = "ctrl+alt+s"
+toggle_monitor = "ctrl+alt+t"
+open_main_window = "ctrl+alt+w"
+
+[translation]
+# 翻译器优先级
+priority = ["local_dict", "online_dict", "ai"]
+force_ai = false
+auto_detect_language = true
+
+# 智能判断阈值
+word_threshold = 1          # ≤1个词 → 词典
+phrase_threshold = 5        # 2-5个词 → 在线词典
+sentence_min_length = 10    # ≥10字符 → AI
+
+[translation.ai]
+provider = "dashscope"      # dashscope/openai/ollama
+model = "qwen-turbo"
+api_key = ""
+base_url = ""
+timeout = 15
+max_tokens = 500
+temperature = 0.3
+
+[translation.online_dict]
+provider = "youdao"         # youdao/iciba
+api_key = ""
+timeout = 5
+
+[translation.local_dict]
+enabled = true
+
+[ui.popup]
+position = "mouse"          # mouse/center/top_right
+offset_x = 10
+offset_y = 10
+width = 450
+max_height = 600
+opacity = 0.95
+auto_hide = false
+auto_hide_delay = 0         # 0=不自动隐藏
+show_animation = true
+theme = "auto"
+
+[ui.main_window]
+width = 1000
+height = 700
+default_view = "timeline"   # timeline/list/cards
+
+[features]
+clipboard_monitor = false
+clipboard_delay = 300       # 毫秒
+clipboard_filter_duplicates = true
+clipboard_filter_paths = true
+auto_save = true
+auto_save_threshold = 3     # 查询3次以上自动保存
+play_sound = false
+pronunciation = true
+context_capture = true      # 捕获来源信息
+
+[review]
+algorithm = "sm2"           # sm2/fsrs
+daily_goal = 50
+notification_enabled = true
+notification_time = "20:00"
+
+[cache]
+enabled = true
+expire_days = 30
+max_size_mb = 100
+
+[blacklist]
+apps = ["PasswordManager", "Bitwarden", "KeePass"]
+auto_add = true
+
+[data]
+backup_enabled = true
+backup_interval_days = 7
+export_format = "csv"       # csv/json/anki
+
+[performance]
+max_concurrent_translations = 3
+log_level = "INFO"          # DEBUG/INFO/WARNING/ERROR
+
