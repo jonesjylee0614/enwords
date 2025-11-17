@@ -80,13 +80,38 @@ class EntryRepository:
             ).limit(limit).all()
     
     def get_query_count(self, text: str) -> int:
-        """获取文本查询次数"""
-        with db_manager.get_session() as session:
-            count = session.query(Entry).filter(
-                Entry.source_text == text,
-                Entry.is_deleted == False
-            ).count()
-            return count
+        """
+        获取文本查询次数
+
+        Args:
+            text: 文本内容
+
+        Returns:
+            查询次数（从缓存hit_count获取）
+        """
+        try:
+            # 生成缓存键
+            import hashlib
+            # 使用与TranslationService相同的方式生成key
+            # 默认假设是英文->中文翻译
+            key_str = f"{text}:auto:zh"
+            cache_key = hashlib.md5(key_str.encode()).hexdigest()
+
+            # 查询缓存
+            with db_manager.get_session() as session:
+                cache = session.query(TranslationCache).filter(
+                    TranslationCache.cache_key == cache_key
+                ).first()
+
+                if cache:
+                    return cache.hit_count
+                else:
+                    # 如果缓存不存在，返回0
+                    return 0
+
+        except Exception as e:
+            logger.error(f"获取查询次数失败: {e}")
+            return 0
     
     def get_review_list(self, limit: int = 50) -> List[Entry]:
         """获取待复习列表"""
@@ -178,14 +203,18 @@ class CacheRepository:
             existing = session.query(TranslationCache).filter(
                 TranslationCache.cache_key == cache.cache_key
             ).first()
-            
+
             if existing:
                 # 更新现有缓存
                 existing.translation = cache.translation
                 existing.created_at = datetime.now()
                 existing.expires_at = cache.expires_at
+                # 增加命中次数（因为这次查询触发了缓存更新）
+                existing.hit_count += 1
             else:
-                # 添加新缓存
+                # 添加新缓存，首次查询计为1次
+                if cache.hit_count == 0:
+                    cache.hit_count = 1
                 session.add(cache)
     
     def clean_expired(self):

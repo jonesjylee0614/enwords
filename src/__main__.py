@@ -91,11 +91,20 @@ class Application:
         """翻译热键回调（在pynput线程中调用）"""
         logger.info("=========== 翻译热键被触发 ===========")
         from src.core.text_extractor import TextExtractor
-        
+        from src.services.context_service import ContextService
+
         try:
+            # 黑名单检查
+            context_info = ContextService.get_active_window_info()
+            if context_info:
+                app_name = context_info.get('app_name', '')
+                if ContextService.is_blacklisted(app_name):
+                    logger.info(f"应用 '{app_name}' 在黑名单中，取消翻译")
+                    return
+
             text = TextExtractor.extract_selected_text()
             logger.info(f"提取到的文本: '{text}'")
-            
+
             if text:
                 logger.info(f"发送翻译请求信号: {text[:50]}...")
                 # 通过信号发送到主线程

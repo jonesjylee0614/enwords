@@ -17,22 +17,22 @@ class TranslationWorker(QThread):
     """翻译工作线程"""
     finished = pyqtSignal(str)  # 翻译完成信号
     error = pyqtSignal(str)     # 错误信号
-    
+
     def __init__(self, text: str, translation_service):
         super().__init__()
         self.text = text
         self.translation_service = translation_service
-    
+
     def run(self):
         """执行翻译"""
         try:
             # 在线程中运行异步代码
             import asyncio
-            
+
             # 创建新的事件循环
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            
+
             try:
                 # 执行异步翻译
                 result = loop.run_until_complete(
@@ -41,25 +41,61 @@ class TranslationWorker(QThread):
                 self.finished.emit(result.translation)
             finally:
                 loop.close()
-                
+
         except Exception as e:
             logger.error(f"翻译失败: {e}")
             self.error.emit(str(e))
 
 
+class PronunciationWorker(QThread):
+    """发音工作线程"""
+    finished = pyqtSignal(bool)  # 发音完成信号
+    error = pyqtSignal(str)      # 错误信号
+
+    def __init__(self, text: str, lang: str = "en"):
+        super().__init__()
+        self.text = text
+        self.lang = lang
+
+    def run(self):
+        """执行发音"""
+        try:
+            import asyncio
+            from src.core.pronunciation import PronunciationService
+
+            # 创建新的事件循环
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+            try:
+                # 执行异步发音
+                service = PronunciationService()
+                success = loop.run_until_complete(
+                    service.pronounce(self.text, self.lang)
+                )
+                self.finished.emit(success)
+            finally:
+                loop.close()
+
+        except Exception as e:
+            logger.error(f"发音失败: {e}")
+            self.error.emit(str(e))
+
+
 class PopupWindow(QWidget):
     """翻译结果悬浮窗"""
-    
+
     def __init__(self):
         super().__init__()
         self.translation_service = TranslationService()
         self.current_text = ""
         self.translation_worker = None  # 翻译工作线程
-        
+        self.pronunciation_worker = None  # 发音工作线程
+
         # 拖动相关
         self._drag_pos = None
         self._is_dragging = False
-        
+
         self.init_ui()
     
     def init_ui(self):
@@ -177,19 +213,24 @@ class PopupWindow(QWidget):
         layout = QHBoxLayout(actions)
         layout.setContentsMargins(0, 8, 0, 0)
         layout.setSpacing(8)
-        
+
         # 收藏按钮
         save_btn = self._create_action_button("⭐", "收藏")
         save_btn.clicked.connect(self._on_save)
         layout.addWidget(save_btn)
-        
+
         # 复制按钮
         copy_btn = self._create_action_button("📋", "复制")
         copy_btn.clicked.connect(self._on_copy)
         layout.addWidget(copy_btn)
-        
+
+        # 发音按钮
+        pronounce_btn = self._create_action_button("🔊", "发音")
+        pronounce_btn.clicked.connect(self._on_pronounce)
+        layout.addWidget(pronounce_btn)
+
         layout.addStretch()
-        
+
         return actions
     
     def _create_action_button(self, icon: str, text: str) -> QPushButton:
@@ -311,22 +352,47 @@ class PopupWindow(QWidget):
     def _on_pronounce(self):
         """发音按钮点击"""
         try:
-            import asyncio
-            from src.core.pronunciation import PronunciationService
-            
             # 获取要发音的文本（原文）
             text = self.current_text
-            if text:
-                # 创建发音服务
-                service = PronunciationService()
-                
-                # 异步发音
-                asyncio.create_task(service.pronounce(text, lang="en"))
-                
-                logger.info(f"开始发音: {text[:20]}...")
-        
+            if not text:
+                logger.warning("没有可发音的文本")
+                return
+
+            # 停止之前的发音任务
+            if self.pronunciation_worker and self.pronunciation_worker.isRunning():
+                self.pronunciation_worker.quit()
+                self.pronunciation_worker.wait()
+
+            # 检测语言
+            from src.core.language_detector import LanguageDetector
+            detector = LanguageDetector()
+            lang = detector.detect(text)
+
+            # 创建新的发音线程
+            self.pronunciation_worker = PronunciationWorker(text, lang)
+            self.pronunciation_worker.finished.connect(self._on_pronunciation_finished)
+            self.pronunciation_worker.error.connect(self._on_pronunciation_error)
+            self.pronunciation_worker.start()
+
+            logger.info(f"开始发音: {text[:20]}... (语言: {lang})")
+
         except Exception as e:
             logger.error(f"发音失败: {e}")
+
+    def _on_pronunciation_finished(self, success: bool):
+        """发音完成回调"""
+        if success:
+            logger.info("发音完成")
+        else:
+            logger.warning("发音失败")
+
+    def _on_pronunciation_error(self, error: str):
+        """发音错误回调"""
+        logger.error(f"发音错误: {error}")
+        # 可选: 显示用户提示
+        from PyQt6.QtWidgets import QToolTip
+        from PyQt6.QtGui import QCursor
+        QToolTip.showText(QCursor.pos(), "发音失败，请检查网络或edge-tts安装", self)
     
     def keyPressEvent(self, event):
         """按键事件"""
