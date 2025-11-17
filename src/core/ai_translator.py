@@ -90,7 +90,17 @@ class AITranslator(TranslatorInterface):
             
             # 解析结果
             content = response.choices[0].message.content
-            return self._parse_response(content, source_lang, target_lang)
+
+            # 提取token使用量
+            tokens_used = None
+            if hasattr(response, 'usage') and response.usage:
+                tokens_used = response.usage.total_tokens
+                logger.debug(f"OpenAI tokens使用: {tokens_used}")
+
+            result = self._parse_response(content, source_lang, target_lang)
+            result.tokens_used = tokens_used
+
+            return result
         
         except Exception as e:
             logger.error(f"OpenAI 翻译失败: {e}")
