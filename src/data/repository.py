@@ -174,6 +174,177 @@ class EntryRepository:
                 )
             ).all()
 
+    def update_review_data(
+        self,
+        entry_id: int,
+        ease_factor: float,
+        interval: int,
+        next_review: datetime,
+        proficiency: int,
+        is_correct: bool
+    ) -> bool:
+        """
+        更新复习数据
+
+        Args:
+            entry_id: 词条ID
+            ease_factor: 新的难度系数
+            interval: 新的间隔天数
+            next_review: 下次复习时间
+            proficiency: 新的熟练度
+            is_correct: 本次是否正确
+
+        Returns:
+            是否成功
+        """
+        try:
+            with db_manager.get_session() as session:
+                entry = session.query(Entry).filter(Entry.id == entry_id).first()
+
+                if not entry:
+                    logger.warning(f"词条不存在: {entry_id}")
+                    return False
+
+                # 更新复习相关字段
+                entry.ease_factor = ease_factor
+                entry.interval = interval
+                entry.next_review = next_review
+                entry.proficiency = proficiency
+                entry.last_review = datetime.now()
+                entry.review_count = (entry.review_count or 0) + 1
+
+                if is_correct:
+                    entry.correct_count = (entry.correct_count or 0) + 1
+
+                entry.updated_at = datetime.now()
+
+                logger.debug(f"更新复习数据: {entry.source_text[:30]}... -> proficiency={proficiency}")
+                return True
+
+        except Exception as e:
+            logger.error(f"更新复习数据失败: {e}")
+            return False
+
+    def get_due_reviews_by_urgency(self) -> dict:
+        """
+        按紧急程度获取待复习词条
+
+        Returns:
+            字典，包含 overdue, today, soon 三个列表
+        """
+        try:
+            with db_manager.get_session() as session:
+                now = datetime.now()
+                today_end = datetime.combine(now.date(), datetime.max.time())
+                soon_end = now + timedelta(days=3)
+
+                # 逾期
+                overdue = session.query(Entry).filter(
+                    and_(
+                        Entry.next_review < now,
+                        Entry.is_deleted == False
+                    )
+                ).order_by(asc(Entry.next_review)).all()
+
+                # 今天
+                today = session.query(Entry).filter(
+                    and_(
+                        Entry.next_review >= now,
+                        Entry.next_review <= today_end,
+                        Entry.is_deleted == False
+                    )
+                ).order_by(asc(Entry.next_review)).all()
+
+                # 即将到期（3天内）
+                soon = session.query(Entry).filter(
+                    and_(
+                        Entry.next_review > today_end,
+                        Entry.next_review <= soon_end,
+                        Entry.is_deleted == False
+                    )
+                ).order_by(asc(Entry.next_review)).all()
+
+                return {
+                    'overdue': overdue,
+                    'today': today,
+                    'soon': soon
+                }
+
+        except Exception as e:
+            logger.error(f"获取待复习词条失败: {e}")
+            return {'overdue': [], 'today': [], 'soon': []}
+
+    def get_review_statistics(self) -> dict:
+        """
+        获取复习统计信息
+
+        Returns:
+            统计信息字典
+        """
+        try:
+            with db_manager.get_session() as session:
+                now = datetime.now()
+
+                # 总词条数
+                total_count = session.query(Entry).filter(
+                    Entry.is_deleted == False
+                ).count()
+
+                # 待复习数
+                due_count = session.query(Entry).filter(
+                    and_(
+                        Entry.next_review <= now,
+                        Entry.is_deleted == False
+                    )
+                ).count()
+
+                # 已掌握数（熟练度>=80）
+                mastered_count = session.query(Entry).filter(
+                    and_(
+                        Entry.proficiency >= 80,
+                        Entry.is_deleted == False
+                    )
+                ).count()
+
+                # 学习中（熟练度40-79）
+                learning_count = session.query(Entry).filter(
+                    and_(
+                        Entry.proficiency >= 40,
+                        Entry.proficiency < 80,
+                        Entry.is_deleted == False
+                    )
+                ).count()
+
+                # 新词（熟练度<40）
+                new_count = session.query(Entry).filter(
+                    and_(
+                        Entry.proficiency < 40,
+                        Entry.is_deleted == False
+                    )
+                ).count()
+
+                # 今日已复习
+                today_start = datetime.combine(now.date(), datetime.min.time())
+                reviewed_today = session.query(Entry).filter(
+                    and_(
+                        Entry.last_review >= today_start,
+                        Entry.is_deleted == False
+                    )
+                ).count()
+
+                return {
+                    'total_count': total_count,
+                    'due_count': due_count,
+                    'mastered_count': mastered_count,
+                    'learning_count': learning_count,
+                    'new_count': new_count,
+                    'reviewed_today': reviewed_today
+                }
+
+        except Exception as e:
+            logger.error(f"获取复习统计失败: {e}")
+            return {}
+
 
 class CacheRepository:
     """缓存仓储"""

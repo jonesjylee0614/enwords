@@ -152,7 +152,7 @@ class TranslationService:
                 self._save_entry(text, result, context)
             
             # 8. 更新统计
-            self._update_stats(translator_type)
+            self._update_stats(translator_type, result)
             
             logger.success(f"翻译完成，耗时 {elapsed:.2f}s")
             return result
@@ -200,6 +200,10 @@ class TranslationService:
     def _save_entry(self, text: str, result: TranslationResult, context: Optional[dict]):
         """保存词条"""
         try:
+            # 获取初始复习参数
+            from src.core.review_algorithm import SM2Algorithm
+            ease_factor, interval, next_review = SM2Algorithm.get_initial_values()
+
             entry = Entry(
                 source_text=text,
                 translation=result.translation,
@@ -211,21 +215,32 @@ class TranslationService:
                 context=context.get('text') if context else None,
                 source_app=context.get('app') if context else None,
                 source_url=context.get('url') if context else None,
+                # 初始化复习相关字段
+                ease_factor=ease_factor,
+                interval=interval,
+                next_review=next_review,
+                proficiency=0,  # 新词条熟练度为0
+                review_count=0,
+                correct_count=0
             )
-            
+
             self.entry_repo.save(entry)
-            logger.debug("词条已保存")
+            logger.debug(f"词条已保存，下次复习时间: {next_review.strftime('%Y-%m-%d')}")
         except Exception as e:
             logger.error(f"保存词条失败: {e}")
     
-    def _update_stats(self, translator_type: TranslatorType):
+    def _update_stats(self, translator_type: TranslatorType, result: TranslationResult):
         """更新统计"""
         try:
             stats_data = {"translation_count": 1}
-            
+
             if translator_type == TranslatorType.AI:
                 stats_data["ai_calls"] = 1
-            
+                # 记录tokens使用量
+                if result.tokens_used:
+                    stats_data["ai_tokens"] = result.tokens_used
+                    logger.debug(f"记录AI tokens: {result.tokens_used}")
+
             self.stats_repo.update_today_stats(**stats_data)
         except Exception as e:
             logger.error(f"更新统计失败: {e}")
