@@ -7,6 +7,7 @@ from loguru import logger
 from src.core.translator_interface import TranslatorInterface, TranslatorType
 from src.core.local_dict_translator import LocalDictTranslator
 from src.core.ai_translator import AITranslator
+from src.core.online_dict_translator import OnlineDictTranslator
 
 
 class TranslatorFactory:
@@ -35,9 +36,7 @@ class TranslatorFactory:
         elif translator_type == TranslatorType.AI:
             instance = AITranslator()
         elif translator_type == TranslatorType.ONLINE_DICT:
-            # 在线词典未实现，降级到 AI
-            logger.warning("在线词典未实现，使用 AI 翻译")
-            instance = AITranslator()
+            instance = OnlineDictTranslator()
         else:
             raise ValueError(f"未知的翻译器类型: {translator_type}")
         

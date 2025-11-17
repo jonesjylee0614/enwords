@@ -83,10 +83,10 @@ class TranslationService:
             try:
                 result = await translator.translate(text, source_lang, target_lang)
             except KeyError as e:
-                # 本地词典未找到，降级到 AI
+                # 词典未找到，降级到 AI
                 if translator_type == TranslatorType.LOCAL_DICT:
                     logger.info(f"本地词典未找到 '{text}'，尝试 AI 翻译")
-                    
+
                     # 检查是否配置了AI
                     if not config.translation.ai.api_key:
                         # 没有配置AI，返回友好提示
@@ -96,15 +96,41 @@ class TranslationService:
                             target_lang=target_lang,
                             translator_type="local_dict_not_found"
                         )
-                    
+
                     translator = self.factory.get_translator(TranslatorType.AI)
                     try:
                         result = await translator.translate(text, source_lang, target_lang)
-                        result.translator_type = "ai_fallback"
+                        result.translator_type = "ai_fallback_from_local"
                     except Exception as ai_error:
                         logger.error(f"AI翻译失败: {ai_error}")
                         return TranslationResult(
                             translation=f"❌ 翻译失败\n\n本地词典未收录「{text}」\nAI 翻译也失败了：{str(ai_error)[:100]}",
+                            source_lang=source_lang,
+                            target_lang=target_lang,
+                            translator_type="failed"
+                        )
+
+                elif translator_type == TranslatorType.ONLINE_DICT:
+                    logger.info(f"在线词典未找到 '{text}'，尝试 AI 翻译")
+
+                    # 检查是否配置了AI
+                    if not config.translation.ai.api_key:
+                        # 没有配置AI，返回友好提示
+                        return TranslationResult(
+                            translation=f"❌ 在线词典未收录「{text}」\n\n💡 提示：配置 AI 翻译可获得更多内容\n编辑 data/config.toml 添加 API key",
+                            source_lang=source_lang,
+                            target_lang=target_lang,
+                            translator_type="online_dict_not_found"
+                        )
+
+                    translator = self.factory.get_translator(TranslatorType.AI)
+                    try:
+                        result = await translator.translate(text, source_lang, target_lang)
+                        result.translator_type = "ai_fallback_from_online"
+                    except Exception as ai_error:
+                        logger.error(f"AI翻译失败: {ai_error}")
+                        return TranslationResult(
+                            translation=f"❌ 翻译失败\n\n在线词典未收录「{text}」\nAI 翻译也失败了：{str(ai_error)[:100]}",
                             source_lang=source_lang,
                             target_lang=target_lang,
                             translator_type="failed"
