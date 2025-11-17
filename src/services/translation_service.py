@@ -83,10 +83,10 @@ class TranslationService:
             try:
                 result = await translator.translate(text, source_lang, target_lang)
             except KeyError as e:
-                # 本地词典未找到，降级到 AI
+                # 词典未找到，降级到 AI
                 if translator_type == TranslatorType.LOCAL_DICT:
                     logger.info(f"本地词典未找到 '{text}'，尝试 AI 翻译")
-                    
+
                     # 检查是否配置了AI
                     if not config.translation.ai.api_key:
                         # 没有配置AI，返回友好提示
@@ -96,15 +96,41 @@ class TranslationService:
                             target_lang=target_lang,
                             translator_type="local_dict_not_found"
                         )
-                    
+
                     translator = self.factory.get_translator(TranslatorType.AI)
                     try:
                         result = await translator.translate(text, source_lang, target_lang)
-                        result.translator_type = "ai_fallback"
+                        result.translator_type = "ai_fallback_from_local"
                     except Exception as ai_error:
                         logger.error(f"AI翻译失败: {ai_error}")
                         return TranslationResult(
                             translation=f"❌ 翻译失败\n\n本地词典未收录「{text}」\nAI 翻译也失败了：{str(ai_error)[:100]}",
+                            source_lang=source_lang,
+                            target_lang=target_lang,
+                            translator_type="failed"
+                        )
+
+                elif translator_type == TranslatorType.ONLINE_DICT:
+                    logger.info(f"在线词典未找到 '{text}'，尝试 AI 翻译")
+
+                    # 检查是否配置了AI
+                    if not config.translation.ai.api_key:
+                        # 没有配置AI，返回友好提示
+                        return TranslationResult(
+                            translation=f"❌ 在线词典未收录「{text}」\n\n💡 提示：配置 AI 翻译可获得更多内容\n编辑 data/config.toml 添加 API key",
+                            source_lang=source_lang,
+                            target_lang=target_lang,
+                            translator_type="online_dict_not_found"
+                        )
+
+                    translator = self.factory.get_translator(TranslatorType.AI)
+                    try:
+                        result = await translator.translate(text, source_lang, target_lang)
+                        result.translator_type = "ai_fallback_from_online"
+                    except Exception as ai_error:
+                        logger.error(f"AI翻译失败: {ai_error}")
+                        return TranslationResult(
+                            translation=f"❌ 翻译失败\n\n在线词典未收录「{text}」\nAI 翻译也失败了：{str(ai_error)[:100]}",
                             source_lang=source_lang,
                             target_lang=target_lang,
                             translator_type="failed"
@@ -126,7 +152,7 @@ class TranslationService:
                 self._save_entry(text, result, context)
             
             # 8. 更新统计
-            self._update_stats(translator_type)
+            self._update_stats(translator_type, result)
             
             logger.success(f"翻译完成，耗时 {elapsed:.2f}s")
             return result
@@ -174,6 +200,10 @@ class TranslationService:
     def _save_entry(self, text: str, result: TranslationResult, context: Optional[dict]):
         """保存词条"""
         try:
+            # 获取初始复习参数
+            from src.core.review_algorithm import SM2Algorithm
+            ease_factor, interval, next_review = SM2Algorithm.get_initial_values()
+
             entry = Entry(
                 source_text=text,
                 translation=result.translation,
@@ -185,21 +215,32 @@ class TranslationService:
                 context=context.get('text') if context else None,
                 source_app=context.get('app') if context else None,
                 source_url=context.get('url') if context else None,
+                # 初始化复习相关字段
+                ease_factor=ease_factor,
+                interval=interval,
+                next_review=next_review,
+                proficiency=0,  # 新词条熟练度为0
+                review_count=0,
+                correct_count=0
             )
-            
+
             self.entry_repo.save(entry)
-            logger.debug("词条已保存")
+            logger.debug(f"词条已保存，下次复习时间: {next_review.strftime('%Y-%m-%d')}")
         except Exception as e:
             logger.error(f"保存词条失败: {e}")
     
-    def _update_stats(self, translator_type: TranslatorType):
+    def _update_stats(self, translator_type: TranslatorType, result: TranslationResult):
         """更新统计"""
         try:
             stats_data = {"translation_count": 1}
-            
+
             if translator_type == TranslatorType.AI:
                 stats_data["ai_calls"] = 1
-            
+                # 记录tokens使用量
+                if result.tokens_used:
+                    stats_data["ai_tokens"] = result.tokens_used
+                    logger.debug(f"记录AI tokens: {result.tokens_used}")
+
             self.stats_repo.update_today_stats(**stats_data)
         except Exception as e:
             logger.error(f"更新统计失败: {e}")

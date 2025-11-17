@@ -22,16 +22,17 @@ class TranslationResult:
     source_lang: str = "en"
     target_lang: str = "zh"
     entry_type: str = "sentence"  # word/phrase/sentence/paragraph
-    
+
     # 扩展信息
     explanation: Optional[str] = None  # 补充说明
     pronunciation: Optional[str] = None  # 发音
     examples: Optional[list] = None  # 例句
     domain: Optional[str] = None  # 领域
-    
+
     # 元数据
     translator_type: Optional[str] = None
     translation_time: Optional[float] = None
+    tokens_used: Optional[int] = None  # AI翻译消耗的tokens
     
     def __str__(self):
         return self.translation

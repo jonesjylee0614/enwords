@@ -14,6 +14,8 @@ from src.utils.config_loader import config
 from src.ui.settings_dialog import SettingsDialog
 from src.ui.entry_detail_dialog import EntryDetailDialog
 from src.ui.statistics_window import StatisticsWindow
+from src.ui.review_window import ReviewWindow
+from src.services.review_service import ReviewService
 
 
 class MainWindow(QMainWindow):
@@ -22,6 +24,8 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.entry_repo = EntryRepository()
+        self.review_service = ReviewService()
+        self.review_window = ReviewWindow()
         self.init_ui()
     
     def init_ui(self):
@@ -119,11 +123,15 @@ class MainWindow(QMainWindow):
         # 词库标签页
         library_tab = self._create_library_tab()
         tabs.addTab(library_tab, "📚 词库")
-        
+
+        # 复习标签页
+        review_tab = self._create_review_tab()
+        tabs.addTab(review_tab, "🔄 复习")
+
         # 统计标签页
         stats_tab = self._create_stats_tab()
         tabs.addTab(stats_tab, "📊 统计")
-        
+
         return tabs
     
     def _create_library_tab(self) -> QWidget:
@@ -160,9 +168,167 @@ class MainWindow(QMainWindow):
         self._load_entries(self.entry_list_widget)
         
         layout.addWidget(self.entry_list_widget)
-        
+
         return widget
-    
+
+    def _create_review_tab(self) -> QWidget:
+        """创建复习标签页"""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(30, 30, 30, 30)
+        layout.setSpacing(20)
+
+        # 标题
+        title = QLabel("📖 智能复习系统")
+        title_font = title.font()
+        title_font.setPointSize(18)
+        title_font.setBold(True)
+        title.setFont(title_font)
+        layout.addWidget(title)
+
+        # 复习统计卡片
+        stats = self.review_service.get_review_statistics()
+
+        stats_widget = QWidget()
+        stats_widget.setStyleSheet("""
+            QWidget {
+                background-color: #f8f9fa;
+                border-radius: 10px;
+                padding: 20px;
+            }
+        """)
+        stats_layout = QVBoxLayout(stats_widget)
+
+        # 统计数据
+        stats_info = QLabel(
+            f"总词条: {stats.get('total_count', 0)} | "
+            f"待复习: {stats.get('due_count', 0)} | "
+            f"已掌握: {stats.get('mastered_count', 0)} | "
+            f"今日已复习: {stats.get('reviewed_today', 0)}"
+        )
+        stats_info.setStyleSheet("font-size: 14px; color: #495057;")
+        stats_layout.addWidget(stats_info)
+
+        # 进度说明
+        mastered_pct = (stats.get('mastered_count', 0) / stats.get('total_count', 1)) * 100
+        progress_label = QLabel(f"掌握率: {mastered_pct:.1f}%")
+        progress_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #28a745;")
+        stats_layout.addWidget(progress_label)
+
+        layout.addWidget(stats_widget)
+
+        # 待复习列表
+        reviews_by_urgency = self.review_service.get_reviews_by_urgency()
+
+        # 逾期
+        if reviews_by_urgency['overdue']:
+            overdue_label = QLabel(f"⚠️ 逾期复习 ({len(reviews_by_urgency['overdue'])} 个)")
+            overdue_label.setStyleSheet("font-size: 14px; font-weight: bold; color: #dc3545;")
+            layout.addWidget(overdue_label)
+
+            overdue_btn = QPushButton(f"开始复习逾期词条 ({len(reviews_by_urgency['overdue'])})")
+            overdue_btn.setMinimumHeight(45)
+            overdue_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #dc3545;
+                    color: white;
+                    border: none;
+                    border-radius: 8px;
+                    font-size: 15px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #c82333;
+                }
+            """)
+            overdue_btn.clicked.connect(lambda: self._start_review(reviews_by_urgency['overdue']))
+            layout.addWidget(overdue_btn)
+
+        # 今天
+        if reviews_by_urgency['today']:
+            today_label = QLabel(f"📅 今日复习 ({len(reviews_by_urgency['today'])} 个)")
+            today_label.setStyleSheet("font-size: 14px; font-weight: bold; color: #007bff;")
+            layout.addWidget(today_label)
+
+            today_btn = QPushButton(f"开始今日复习 ({len(reviews_by_urgency['today'])})")
+            today_btn.setMinimumHeight(45)
+            today_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #007bff;
+                    color: white;
+                    border: none;
+                    border-radius: 8px;
+                    font-size: 15px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #0056b3;
+                }
+            """)
+            today_btn.clicked.connect(lambda: self._start_review(reviews_by_urgency['today']))
+            layout.addWidget(today_btn)
+
+        # 即将到期
+        if reviews_by_urgency['soon']:
+            soon_label = QLabel(f"🔜 即将到期 ({len(reviews_by_urgency['soon'])} 个)")
+            soon_label.setStyleSheet("font-size: 14px; font-weight: bold; color: #ffc107;")
+            layout.addWidget(soon_label)
+
+            soon_btn = QPushButton(f"提前复习 ({len(reviews_by_urgency['soon'])})")
+            soon_btn.setMinimumHeight(45)
+            soon_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #ffc107;
+                    color: #212529;
+                    border: none;
+                    border-radius: 8px;
+                    font-size: 15px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #e0a800;
+                }
+            """)
+            soon_btn.clicked.connect(lambda: self._start_review(reviews_by_urgency['soon']))
+            layout.addWidget(soon_btn)
+
+        # 如果没有待复习
+        if not (reviews_by_urgency['overdue'] or reviews_by_urgency['today']):
+            no_review_label = QLabel("✅ 目前没有需要复习的词条\n\n继续学习新单词，系统会在合适的时间提醒你复习！")
+            no_review_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            no_review_label.setStyleSheet("""
+                QLabel {
+                    font-size: 14px;
+                    color: #6c757d;
+                    padding: 40px;
+                    background-color: #e9ecef;
+                    border-radius: 10px;
+                }
+            """)
+            layout.addWidget(no_review_label)
+
+        layout.addStretch()
+
+        return widget
+
+    def _start_review(self, entries):
+        """
+        开始复习
+
+        Args:
+            entries: 词条列表
+        """
+        try:
+            if not entries:
+                logger.warning("没有待复习的词条")
+                return
+
+            # 启动复习窗口
+            self.review_window.start_review(entries)
+
+        except Exception as e:
+            logger.error(f"启动复习失败: {e}")
+
     def _create_stats_tab(self) -> QWidget:
         """创建统计标签页"""
         # 直接嵌入统计窗口

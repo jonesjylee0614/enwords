@@ -78,31 +78,44 @@ class ClipboardMonitor(QObject):
     def _should_process(self, text: str) -> bool:
         """
         判断是否应该处理该文本
-        
+
         Args:
             text: 剪贴板文本
-            
+
         Returns:
             是否处理
         """
         if not text:
             return False
-        
+
         text = text.strip()
-        
+
         # 基本验证
         if not TextExtractor.validate_text(text):
             return False
-        
+
         # 过滤重复内容
         if config.features.clipboard_filter_duplicates:
             if text == self._last_text:
                 return False
-        
+
         # 长度限制
         if len(text) > 1000:
             logger.debug("文本过长，跳过")
             return False
-        
+
+        # 黑名单检查（获取当前活动窗口）
+        try:
+            from src.services.context_service import ContextService
+            context_info = ContextService.get_active_window_info()
+            if context_info:
+                app_name = context_info.get('app_name', '')
+                if ContextService.is_blacklisted(app_name):
+                    logger.debug(f"应用 '{app_name}' 在黑名单中，跳过剪贴板监听")
+                    return False
+        except Exception as e:
+            logger.debug(f"黑名单检查失败: {e}")
+            # 检查失败时继续处理，不影响正常功能
+
         return True
 
